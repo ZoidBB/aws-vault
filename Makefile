@@ -18,7 +18,7 @@ aws-vault-linux-amd64: $(SRC)
 	GOOS=linux GOARCH=amd64 go build -o $@ -ldflags="$(FLAGS)" .
 
 aws-vault-darwin-amd64: $(SRC)
-	GOOS=darwin GOARCH=amd64 go build -o $@ -ldflags="$(FLAGS)" .
+	GOOS=darwin GOARCH=amd64 go build -o $@ -ldflags="$(FLAGS) -extldflags '-sectcreate __TEXT __info_plist Info.plist'" .
 
 aws-vault-windows-386.exe: $(SRC)
 	GOOS=windows GOARCH=386 go build -o $@ -ldflags="$(FLAGS)" .
