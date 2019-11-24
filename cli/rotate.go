@@ -18,6 +18,7 @@ func ConfigureRotateCommand(app *kingpin.Application) {
 	input := RotateCommandInput{}
 
 	cmd := app.Command("rotate", "Rotates credentials")
+
 	cmd.Arg("profile", "Name of the profile").
 		Required().
 		HintAction(awsConfigFile.ProfileNames).
@@ -30,7 +31,7 @@ func ConfigureRotateCommand(app *kingpin.Application) {
 	cmd.Flag("mfa-serial", "The identification number of the MFA device to use").
 		StringVar(&input.Config.MfaSerial)
 
-	cmd.Flag("no-session", "Use root credentials, no session created").
+	cmd.Flag("no-session", "Use stored credentials directly, no session created").
 		Short('n').
 		BoolVar(&input.Config.NoSession)
 
@@ -45,12 +46,17 @@ func ConfigureRotateCommand(app *kingpin.Application) {
 func RotateCommand(app *kingpin.Application, input RotateCommandInput) {
 	err := configLoader.LoadFromProfile(input.ProfileName, &input.Config)
 	if err != nil {
-		app.Fatalf("%v", err)
+		app.Fatalf(err.Error())
+		return
 	}
 
-	fmt.Printf("Rotating credentials for profile %q (takes 10-20 seconds)\n", input.ProfileName)
-	if err := vault.Rotate(input.ProfileName, input.Keyring, &input.Config); err != nil {
-		fmt.Println("Rotation failed. Try using --no-session")
+	if input.Config.CredentialsName != input.Config.ProfileName {
+		fmt.Printf("Using profile '%s' to rotate the credentials for profile '%s' (takes 10-20 seconds)\n", input.Config.ProfileName, input.Config.CredentialsName)
+	} else {
+		fmt.Printf("Rotating credentials for profile '%s' (takes 10-20 seconds)\n", input.Config.CredentialsName)
+	}
+
+	if err := vault.Rotate(input.Keyring, &input.Config); err != nil {
 		app.Fatalf(err.Error())
 		return
 	}
