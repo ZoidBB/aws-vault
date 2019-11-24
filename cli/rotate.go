@@ -9,17 +9,23 @@ import (
 )
 
 type RotateCommandInput struct {
-	ProfileName string
-	Keyring     keyring.Keyring
-	Config      vault.Config
+	CredentialsName string
+	ProfileName     string
+	Keyring         keyring.Keyring
+	Config          vault.Config
 }
 
 func ConfigureRotateCommand(app *kingpin.Application) {
 	input := RotateCommandInput{}
 
 	cmd := app.Command("rotate", "Rotates credentials")
-	cmd.Arg("profile", "Name of the profile").
+
+	cmd.Arg("profile", "Name of the profile with credentials to rotate").
 		Required().
+		HintAction(awsConfigFile.ProfileNames).
+		StringVar(&input.CredentialsName)
+
+	cmd.Flag("use-profile", "Name of the profile to use while rotating the credentials.").
 		HintAction(awsConfigFile.ProfileNames).
 		StringVar(&input.ProfileName)
 
@@ -30,10 +36,6 @@ func ConfigureRotateCommand(app *kingpin.Application) {
 	cmd.Flag("mfa-serial", "The identification number of the MFA device to use").
 		StringVar(&input.Config.MfaSerial)
 
-	cmd.Flag("no-session", "Use root credentials, no session created").
-		Short('n').
-		BoolVar(&input.Config.NoSession)
-
 	cmd.Action(func(c *kingpin.ParseContext) error {
 		input.Config.MfaPromptMethod = GlobalFlags.PromptDriver
 		input.Keyring = keyringImpl
@@ -43,14 +45,38 @@ func ConfigureRotateCommand(app *kingpin.Application) {
 }
 
 func RotateCommand(app *kingpin.Application, input RotateCommandInput) {
-	err := configLoader.LoadFromProfile(input.ProfileName, &input.Config)
-	if err != nil {
-		app.Fatalf("%v", err)
+	configProfileName := input.CredentialsName
+	if input.ProfileName != "" {
+		configProfileName = input.ProfileName
 	}
 
-	fmt.Printf("Rotating credentials for profile %q (takes 10-20 seconds)\n", input.ProfileName)
-	if err := vault.Rotate(input.ProfileName, input.Keyring, &input.Config); err != nil {
-		fmt.Println("Rotation failed. Try using --no-session")
+	err := configLoader.LoadFromProfile(configProfileName, &input.Config)
+	if err != nil {
+		app.Fatalf("%v", err)
+		return
+	}
+
+	if input.ProfileName == "" {
+		if input.Config.ProfileName != input.Config.CredentialsName {
+			app.Fatalf("Credentials for profile '%s' are sourced from '%s'. Try 'aws-vault rotate %s' instead",
+				input.Config.ProfileName, input.Config.CredentialsName, input.Config.CredentialsName)
+			return
+		}
+		input.Config.NoSession = true
+		input.Config.RoleARN = ""
+
+		fmt.Printf("Rotating credentials '%s' (takes 10-20 seconds)\n", input.Config.CredentialsName)
+	} else {
+		if input.CredentialsName != input.Config.CredentialsName {
+			app.Fatalf("Credentials for profile '%s' are sourced from '%s'. Try 'aws-vault rotate %s' instead",
+				input.ProfileName, input.Config.CredentialsName, input.Config.CredentialsName)
+			return
+		}
+
+		fmt.Printf("Rotating credentials '%s' using profile '%s' (takes 10-20 seconds)\n", input.Config.CredentialsName, input.Config.ProfileName)
+	}
+
+	if err := vault.Rotate(input.Keyring, &input.Config); err != nil {
 		app.Fatalf(err.Error())
 		return
 	}
